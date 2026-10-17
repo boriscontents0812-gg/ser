@@ -36,10 +36,68 @@ export default async function handler(req: any, res: any) {
     }
 
     const totalQty = items.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0);
-    const unitPriceCents = 3800;
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.headers.host || 'localhost:3000';
     const baseUrl = returnUrl || `${protocol}://${host}`;
+
+    // Shopify Storefront API Check
+    const shopifyDomain = (process.env.SHOPIFY_STORE_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const shopifyAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN || '';
+    const shopifyApiVersion = process.env.SHOPIFY_API_VERSION || '2024-10';
+    const isShopifyConfigured = Boolean(shopifyDomain && shopifyAccessToken && !shopifyAccessToken.includes('placeholder'));
+
+    if (isShopifyConfigured) {
+      try {
+        const variantId = req.body.variantId || 'gid://shopify/ProductVariant/placeholder';
+        const shopifyResponse = await fetch(`https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Storefront-Access-Token': shopifyAccessToken,
+          },
+          body: JSON.stringify({
+            query: `
+              mutation cartCreate($input: CartInput!) {
+                cartCreate(input: $input) {
+                  cart {
+                    id
+                    checkoutUrl
+                  }
+                  userErrors {
+                    field
+                    message
+                  }
+                }
+              }
+            `,
+            variables: {
+              input: {
+                lines: items.map((i: any) => ({
+                  merchandiseId: req.body.merchandiseId || variantId,
+                  quantity: i.quantity,
+                })),
+                buyerIdentity: customerEmail ? { email: customerEmail } : undefined,
+              },
+            },
+          }),
+        });
+
+        if (shopifyResponse.ok) {
+          const shopifyJson = await shopifyResponse.json();
+          const checkoutUrl = shopifyJson?.data?.cartCreate?.cart?.checkoutUrl;
+          if (checkoutUrl) {
+            return res.status(200).json({
+              success: true,
+              checkoutUrl,
+              cartId: shopifyJson.data.cartCreate.cart.id,
+              isShopify: true,
+            });
+          }
+        }
+      } catch (shopifyErr: any) {
+        console.warn('Shopify Storefront checkout failed on Vercel:', shopifyErr.message);
+      }
+    }
 
     // If Stripe is not configured or client requested test mode
     if (!isStripeConfigured || !stripeClient || testMode) {

@@ -82,6 +82,18 @@ if (isStripeConfigured) {
   console.log('Stripe secret key not configured or set to placeholder. Awaiting owner credentials in .env.');
 }
 
+// Shopify Storefront API configuration
+const shopifyDomain = (process.env.SHOPIFY_STORE_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+const shopifyAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN || '';
+const shopifyApiVersion = process.env.SHOPIFY_API_VERSION || '2024-10';
+const isShopifyConfigured = Boolean(shopifyDomain && shopifyAccessToken && !shopifyAccessToken.includes('placeholder'));
+
+if (isShopifyConfigured) {
+  console.log(`Shopify Storefront API connected to https://${shopifyDomain}`);
+} else {
+  console.log('Shopify Storefront API not configured. Awaiting SHOPIFY_STORE_DOMAIN in .env.');
+}
+
 // Webhook endpoint requires raw body for cryptographic signature verification
 app.post(
   '/api/webhook',
@@ -235,9 +247,62 @@ app.post('/api/checkout', async (req: Request, res: Response): Promise<void> => 
         error: `Only ${SERVER_PRODUCT.inventory} item(s) currently available in stock. Please adjust your quantity.`
       });
       return;
+    // 5. If Shopify is configured, use Shopify native checkout as the primary commerce engine
+    if (isShopifyConfigured) {
+      try {
+        const variantId = req.body.variantId || 'gid://shopify/ProductVariant/placeholder';
+        const shopifyResponse = await fetch(`https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Storefront-Access-Token': shopifyAccessToken,
+          },
+          body: JSON.stringify({
+            query: `
+              mutation cartCreate($input: CartInput!) {
+                cartCreate(input: $input) {
+                  cart {
+                    id
+                    checkoutUrl
+                  }
+                  userErrors {
+                    field
+                    message
+                  }
+                }
+              }
+            `,
+            variables: {
+              input: {
+                lines: items.map((i) => ({
+                  merchandiseId: req.body.merchandiseId || variantId,
+                  quantity: i.quantity,
+                })),
+                buyerIdentity: req.body.customerEmail ? { email: req.body.customerEmail } : undefined,
+              },
+            },
+          }),
+        });
+
+        if (shopifyResponse.ok) {
+          const shopifyJson = await shopifyResponse.json();
+          const checkoutUrl = shopifyJson?.data?.cartCreate?.cart?.checkoutUrl;
+          if (checkoutUrl) {
+            res.json({
+              success: true,
+              checkoutUrl,
+              cartId: shopifyJson.data.cartCreate.cart.id,
+              isShopify: true,
+            });
+            return;
+          }
+        }
+      } catch (shopifyErr: any) {
+        console.warn('Shopify Storefront cart creation failed, falling back:', shopifyErr.message);
+      }
     }
 
-    // 5. Check if real payment provider is configured
+    // 6. Check if Stripe payment provider is configured
     const isTestCheckout = Boolean(req.body.testMode || !isStripeConfigured || !stripeClient);
 
     if (!isStripeConfigured || !stripeClient) {
