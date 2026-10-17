@@ -96,6 +96,16 @@ async function capture() {
   });
   console.log('Saved storefront_checkout_section.png');
 
+  // 7. Checkout steps 3 & 4 (Shipping and Payment)
+  await checkoutPage.evaluate(() => {
+    window.scrollBy(0, 500);
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  await checkoutPage.screenshot({
+    path: path.join(artifactDir, 'storefront_checkout_steps3_4.png'),
+  });
+  console.log('Saved storefront_checkout_steps3_4.png');
+
   await browser.close();
   console.log('All screenshots captured successfully.');
 }
