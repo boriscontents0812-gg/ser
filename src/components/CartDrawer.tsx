@@ -14,6 +14,7 @@ export const CartDrawer: React.FC = () => {
     removeItem,
     clearCheckoutError,
     handleCheckout,
+    scrollToCheckout,
   } = useCart();
 
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -217,18 +218,11 @@ export const CartDrawer: React.FC = () => {
             {/* Black Pill Checkout Button */}
             <button
               type="button"
-              disabled={isCheckingOut}
-              onClick={handleCheckout}
-              className="w-full bg-[#0D0E10] hover:bg-black text-white font-semibold text-xs tracking-[0.15em] uppercase py-4 rounded-full transition-all shadow-pill hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#3898D5]"
+              onClick={scrollToCheckout}
+              className="w-full bg-[#0D0E10] hover:bg-black text-white font-semibold text-xs tracking-[0.15em] uppercase py-4 rounded-full transition-all shadow-pill hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 group focus:outline-none focus:ring-2 focus:ring-[#3898D5]"
             >
-              {isCheckingOut ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Securing Session...</span>
-                </>
-              ) : (
-                <span>Checkout</span>
-              )}
+              <span>Proceed to Checkout</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </button>
 
             <div className="text-center text-[11px] text-[#708496] pt-1">

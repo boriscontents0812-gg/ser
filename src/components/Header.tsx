@@ -62,6 +62,15 @@ export const Header: React.FC = () => {
           >
             Capacity
           </button>
+          <button
+            onClick={() => scrollTo('checkout')}
+            className="hover:text-[#14334D] transition-colors focus:outline-none flex items-center gap-1.5"
+          >
+            <span>Checkout</span>
+            {totalQuantity > 0 && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[#3898D5]" />
+            )}
+          </button>
         </nav>
 
         {/* Working Cart Icon Button - Styled as the signature white pill button from 4th image & kree8 */}
@@ -107,6 +116,12 @@ export const Header: React.FC = () => {
             className="block w-full text-left py-2 text-[#456176] hover:text-[#14334D]"
           >
             Capacity Guide
+          </button>
+          <button
+            onClick={() => scrollTo('checkout')}
+            className="block w-full text-left py-2 text-[#2563EB] font-bold"
+          >
+            Checkout ({totalQuantity})
           </button>
         </div>
       )}

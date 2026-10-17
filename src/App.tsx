@@ -6,6 +6,7 @@ import { ProductGallery } from './components/ProductGallery';
 import { ProductHero } from './components/ProductHero';
 import { FeatureSection } from './components/FeatureSection';
 import { CapacitySection } from './components/CapacitySection';
+import { CheckoutSection } from './components/CheckoutSection';
 import { Footer } from './components/Footer';
 import { CartDrawer } from './components/CartDrawer';
 import { PolicyModal, PolicyType } from './components/PolicyModal';
@@ -70,6 +71,9 @@ export const AppContent: React.FC = () => {
 
         {/* Approximate Capacity Section ("What fits inside") */}
         <CapacitySection />
+
+        {/* Dedicated Checkout Section */}
+        <CheckoutSection />
       </main>
 
       {/* Store Footer */}

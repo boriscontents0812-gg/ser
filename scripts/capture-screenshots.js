@@ -82,6 +82,20 @@ async function capture() {
   });
   console.log('Saved storefront_order_confirmation.png');
 
+  // 6. Checkout section close-up
+  const checkoutPage = await browser.newPage();
+  await checkoutPage.setViewport({ width: 1440, height: 1100, deviceScaleFactor: 2 });
+  await checkoutPage.goto('http://localhost:3000#checkout', { waitUntil: 'networkidle0' });
+  await checkoutPage.evaluate(() => {
+    const el = document.getElementById('checkout');
+    if (el) el.scrollIntoView();
+  });
+  await new Promise((r) => setTimeout(r, 600));
+  await checkoutPage.screenshot({
+    path: path.join(artifactDir, 'storefront_checkout_section.png'),
+  });
+  console.log('Saved storefront_checkout_section.png');
+
   await browser.close();
   console.log('All screenshots captured successfully.');
 }

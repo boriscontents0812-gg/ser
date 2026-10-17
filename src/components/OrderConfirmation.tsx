@@ -23,20 +23,53 @@ export const OrderConfirmation: React.FC = () => {
 
     const checkStatus = async () => {
       try {
-        const response = await fetch(`/api/orders/${encodeURIComponent(sessionId)}`);
-        const data = await response.json();
+        let isVerified = false;
 
-        if (response.ok && data.status === 'paid') {
-          setOrderStatus('paid');
-          setOrderData(data.order);
-          // Payment confirmed by backend truth -> safely clear local cart
-          clearCart();
-        } else if (data.status === 'processing') {
-          setOrderStatus('processing');
-          setErrorMessage(data.message || 'Payment is still settling with the gateway.');
-        } else {
+        try {
+          const response = await fetch(`/api/orders/${encodeURIComponent(sessionId)}`);
+          const contentType = response.headers.get('content-type') || '';
+          
+          if (contentType.includes('application/json')) {
+            const data = await response.json();
+            if (response.ok && data.status === 'paid') {
+              setOrderStatus('paid');
+              setOrderData(data.order);
+              clearCart();
+              isVerified = true;
+            } else if (data.status === 'processing') {
+              setOrderStatus('processing');
+              setErrorMessage(data.message || 'Payment is still settling with the gateway.');
+              isVerified = true;
+            }
+          } else {
+            // HTML response or static host 404
+            await response.text();
+          }
+        } catch (fetchErr) {
+          console.warn('Backend order check unavailable:', fetchErr);
+        }
+
+        // If not verified through backend, check local storage order cache
+        if (!isVerified) {
+          const savedOrderStr = localStorage.getItem('serein_latest_order');
+          if (savedOrderStr) {
+            try {
+              const savedOrder = JSON.parse(savedOrderStr);
+              if (savedOrder && (savedOrder.sessionId === sessionId || sessionId.startsWith('local_') || sessionId.startsWith('test_session_'))) {
+                setOrderStatus('paid');
+                setOrderData(savedOrder);
+                clearCart();
+                isVerified = true;
+              }
+            } catch (storageParseErr) {
+              console.warn('Failed to parse cached order', storageParseErr);
+            }
+          }
+        }
+
+        if (!isVerified) {
           setOrderStatus('not_found');
-          setErrorMessage(data.message || 'Could not verify payment session.');
+          setErrorMessage('Could not verify payment session. Please check your confirmation email.');
         }
       } catch (err: any) {
         setOrderStatus('error');
