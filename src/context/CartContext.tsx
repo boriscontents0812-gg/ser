@@ -256,8 +256,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Could not cache fallback order in localStorage:', storageErr);
       }
 
-      // Redirect to order confirmation page
-      window.location.href = `/order-confirmation?session_id=${fallbackSessionId}`;
+      // Redirect to order confirmation page (root path with query to prevent static host 404s)
+      window.location.href = `/?order-confirmation=true&session_id=${fallbackSessionId}`;
     } catch (err: any) {
       console.error('Checkout error:', err);
       setCheckoutError(err.message || 'An unexpected error occurred during checkout.');

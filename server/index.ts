@@ -287,7 +287,7 @@ app.post('/api/checkout', async (req: Request, res: Response): Promise<void> => 
       res.json({
         success: true,
         sessionId: testSessionId,
-        checkoutUrl: `${baseUrl}/order-confirmation?session_id=${testSessionId}`,
+        checkoutUrl: `${baseUrl}/?order-confirmation=true&session_id=${testSessionId}`,
         orderId,
         isTestMode: true,
       });
@@ -318,7 +318,7 @@ app.post('/api/checkout', async (req: Request, res: Response): Promise<void> => 
       shipping_address_collection: {
         allowed_countries: ['US', 'CA', 'GB', 'AU', 'NZ', 'DE', 'FR'],
       },
-      success_url: `${baseUrl}/order-confirmation?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${baseUrl}/?order-confirmation=true&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/?canceled=true`,
       metadata: {
         orderId,

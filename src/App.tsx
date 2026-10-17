@@ -18,11 +18,25 @@ export const AppContent: React.FC = () => {
   const [isOrderConfirmation, setIsOrderConfirmation] = useState(false);
 
   useEffect(() => {
-    const path = window.location.pathname;
-    const search = window.location.search;
-    if (path.includes('order-confirmation') || search.includes('session_id=')) {
-      setIsOrderConfirmation(true);
-    }
+    const checkRoute = () => {
+      const path = window.location.pathname;
+      const search = window.location.search;
+      const hash = window.location.hash;
+      if (
+        path.includes('order-confirmation') ||
+        search.includes('session_id=') ||
+        search.includes('order-confirmation') ||
+        hash.includes('order-confirmation')
+      ) {
+        setIsOrderConfirmation(true);
+      } else {
+        setIsOrderConfirmation(false);
+      }
+    };
+
+    checkRoute();
+    window.addEventListener('popstate', checkRoute);
+    return () => window.removeEventListener('popstate', checkRoute);
   }, []);
 
   if (isOrderConfirmation) {
