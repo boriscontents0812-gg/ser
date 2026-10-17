@@ -37,8 +37,8 @@ export default async function handler(req: any, res: any) {
 
     const totalQty = items.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0);
     const protocol = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers.host || 'localhost:3000';
     const baseUrl = returnUrl || `${protocol}://${host}`;
+    const unitPriceCents = Math.round(parseFloat(process.env.STORE_RETAIL_PRICE || '38.00') * 100);
 
     // Shopify Storefront API Check
     const shopifyDomain = (process.env.SHOPIFY_STORE_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -48,50 +48,96 @@ export default async function handler(req: any, res: any) {
 
     if (isShopifyConfigured) {
       try {
-        const variantId = req.body.variantId || 'gid://shopify/ProductVariant/placeholder';
-        const shopifyResponse = await fetch(`https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Storefront-Access-Token': shopifyAccessToken,
-          },
-          body: JSON.stringify({
-            query: `
-              mutation cartCreate($input: CartInput!) {
-                cartCreate(input: $input) {
-                  cart {
-                    id
-                    checkoutUrl
+        let variantId = req.body.variantId || process.env.SHOPIFY_VARIANT_ID;
+        
+        // Auto-discover product variant ID from Shopify Storefront API if not explicitly supplied
+        if (!variantId || variantId.includes('placeholder')) {
+          try {
+            const prodRes = await fetch(`https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Storefront-Access-Token': shopifyAccessToken,
+              },
+              body: JSON.stringify({
+                query: `{
+                  products(first: 5) {
+                    edges {
+                      node {
+                        id
+                        title
+                        handle
+                        variants(first: 1) {
+                          edges {
+                            node {
+                              id
+                              availableForSale
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
-                  userErrors {
-                    field
-                    message
+                }`
+              })
+            });
+            if (prodRes.ok) {
+              const prodJson = await prodRes.json();
+              const edges = prodJson?.data?.products?.edges || [];
+              if (edges.length > 0) {
+                variantId = edges[0].node.variants.edges[0]?.node?.id;
+              }
+            }
+          } catch (autoErr) {
+            console.warn('Could not auto-fetch variant from Shopify:', autoErr);
+          }
+        }
+
+        if (variantId && !variantId.includes('placeholder')) {
+          const shopifyResponse = await fetch(`https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Shopify-Storefront-Access-Token': shopifyAccessToken,
+            },
+            body: JSON.stringify({
+              query: `
+                mutation cartCreate($input: CartInput!) {
+                  cartCreate(input: $input) {
+                    cart {
+                      id
+                      checkoutUrl
+                    }
+                    userErrors {
+                      field
+                      message
+                    }
                   }
                 }
-              }
-            `,
-            variables: {
-              input: {
-                lines: items.map((i: any) => ({
-                  merchandiseId: req.body.merchandiseId || variantId,
-                  quantity: i.quantity,
-                })),
-                buyerIdentity: customerEmail ? { email: customerEmail } : undefined,
+              `,
+              variables: {
+                input: {
+                  lines: items.map((i: any) => ({
+                    merchandiseId: req.body.merchandiseId || variantId,
+                    quantity: i.quantity,
+                  })),
+                  buyerIdentity: customerEmail ? { email: customerEmail } : undefined,
+                },
               },
-            },
-          }),
-        });
+            }),
+          });
 
-        if (shopifyResponse.ok) {
-          const shopifyJson = await shopifyResponse.json();
-          const checkoutUrl = shopifyJson?.data?.cartCreate?.cart?.checkoutUrl;
-          if (checkoutUrl) {
-            return res.status(200).json({
-              success: true,
-              checkoutUrl,
-              cartId: shopifyJson.data.cartCreate.cart.id,
-              isShopify: true,
-            });
+          if (shopifyResponse.ok) {
+            const shopifyJson = await shopifyResponse.json();
+            const checkoutUrl = shopifyJson?.data?.cartCreate?.cart?.checkoutUrl;
+            if (checkoutUrl) {
+              return res.status(200).json({
+                success: true,
+                checkoutUrl,
+                cartId: shopifyJson.data.cartCreate.cart.id,
+                isShopify: true,
+              });
+            }
           }
         }
       } catch (shopifyErr: any) {

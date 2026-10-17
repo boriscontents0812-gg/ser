@@ -142,7 +142,7 @@ export const CheckoutSection: React.FC = () => {
         shippingMethod: 'free',
         phone,
       },
-      testMode: true,
+      testMode: false,
     });
   };
 
