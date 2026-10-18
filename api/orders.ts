@@ -40,9 +40,14 @@ export default async function handler(req: any, res: any) {
             orderId: session.metadata?.orderId || `SR-ORD-${sessionId.slice(-6).toUpperCase()}`,
             total: session.amount_total ? session.amount_total / 100 : 38.00,
             currency: (session.currency || 'usd').toUpperCase(),
-            customerEmail: session.customer_details?.email || 'customer@serein.com',
+            customerEmail: session.customer_details?.email || 'Customer',
             paidAt: new Date().toISOString(),
           },
+        });
+      } else {
+        return res.status(200).json({
+          status: 'processing',
+          message: 'Payment is still settling with the gateway.',
         });
       }
     } catch (e: any) {
@@ -50,23 +55,9 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  // Test sessions or fallback confirmed sessions
-  if (sessionId.startsWith('test_session_') || sessionId.startsWith('local_')) {
-    return res.status(200).json({
-      status: 'paid',
-      order: {
-        sessionId,
-        orderId: `SR-ORD-${Date.now().toString().slice(-6)}`,
-        total: 38.00,
-        currency: 'USD',
-        customerEmail: 'customer@serein.com',
-        paidAt: new Date().toISOString(),
-      },
-    });
-  }
-
+  // Do not fabricate fake order records for unverified sessions
   return res.status(404).json({
     status: 'not_found',
-    message: 'Payment verification record not found.',
+    message: 'No verified payment record found for this session.',
   });
 }

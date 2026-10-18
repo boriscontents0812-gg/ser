@@ -1,35 +1,74 @@
 /**
  * Shopify Storefront API Client
- * Enables connecting the Serein storefront directly to a live Shopify store
- * using Shopify as the single source of truth for pricing, inventory, and native checkout.
+ * Connects the Serein storefront directly to Shopify Storefront API
+ * for live products, pricing, inventory, and official hosted checkout.
  */
 
 export interface ShopifyConfig {
   domain: string;
   storefrontAccessToken: string;
-  apiVersion?: string;
+  apiVersion: string;
+  variantId?: string;
   productHandle?: string;
 }
 
 export const getShopifyConfig = (): ShopifyConfig => {
   const env: any = (import.meta as any).env || {};
   return {
-    domain: (env.VITE_SHOPIFY_STORE_DOMAIN || (typeof process !== 'undefined' ? process.env?.SHOPIFY_STORE_DOMAIN : '') || '').replace(/^https?:\/\//, '').replace(/\/$/, ''),
-    storefrontAccessToken: env.VITE_SHOPIFY_STOREFRONT_ACCESS_TOKEN || (typeof process !== 'undefined' ? process.env?.SHOPIFY_STOREFRONT_ACCESS_TOKEN : '') || '',
-    apiVersion: env.VITE_SHOPIFY_API_VERSION || (typeof process !== 'undefined' ? process.env?.SHOPIFY_API_VERSION : '') || '2024-10',
-    productHandle: env.VITE_SHOPIFY_PRODUCT_HANDLE || (typeof process !== 'undefined' ? process.env?.SHOPIFY_PRODUCT_HANDLE : '') || 'the-double-layer-travel-organizer',
+    domain: (
+      env.VITE_SHOPIFY_STORE_DOMAIN ||
+      (typeof process !== 'undefined' ? process.env?.SHOPIFY_STORE_DOMAIN : '') ||
+      ''
+    )
+      .replace(/^https?:\/\//, '')
+      .replace(/\/$/, '')
+      .trim(),
+    storefrontAccessToken: (
+      env.VITE_SHOPIFY_STOREFRONT_ACCESS_TOKEN ||
+      (typeof process !== 'undefined' ? process.env?.SHOPIFY_STOREFRONT_ACCESS_TOKEN : '') ||
+      ''
+    ).trim(),
+    apiVersion: (
+      env.VITE_SHOPIFY_API_VERSION ||
+      (typeof process !== 'undefined' ? process.env?.SHOPIFY_API_VERSION : '') ||
+      '2024-10'
+    ).trim(),
+    variantId: (
+      env.VITE_SHOPIFY_VARIANT_ID ||
+      (typeof process !== 'undefined' ? process.env?.SHOPIFY_VARIANT_ID : '') ||
+      ''
+    ).trim(),
+    productHandle: (
+      env.VITE_SHOPIFY_PRODUCT_HANDLE ||
+      (typeof process !== 'undefined' ? process.env?.SHOPIFY_PRODUCT_HANDLE : '') ||
+      'the-double-layer-travel-organizer'
+    ).trim(),
   };
 };
 
 export const isShopifyConfigured = (): boolean => {
   const config = getShopifyConfig();
   return Boolean(
-    config.domain && 
-    !config.domain.includes('placeholder') && 
-    config.storefrontAccessToken && 
+    config.domain &&
+    !config.domain.includes('placeholder') &&
+    config.storefrontAccessToken &&
     !config.storefrontAccessToken.includes('placeholder')
   );
 };
+
+/**
+ * Format a raw variant ID (e.g. "51592955855122") into a valid Shopify Global ID
+ */
+export function formatShopifyVariantId(rawId: string): string {
+  if (!rawId) return '';
+  const trimmed = rawId.trim();
+  if (trimmed.startsWith('gid://shopify/ProductVariant/')) return trimmed;
+  // If pure numbers, convert to standard GID
+  if (/^\d+$/.test(trimmed)) {
+    return `gid://shopify/ProductVariant/${trimmed}`;
+  }
+  return trimmed;
+}
 
 export interface ShopifyProductData {
   id: string;
@@ -46,11 +85,16 @@ export interface ShopifyProductData {
 /**
  * Execute GraphQL queries against Shopify Storefront API
  */
-export async function shopifyStorefrontQuery<T = any>(query: string, variables: Record<string, any> = {}): Promise<T> {
+export async function shopifyStorefrontQuery<T = any>(
+  query: string,
+  variables: Record<string, any> = {}
+): Promise<T> {
   const config = getShopifyConfig();
 
   if (!isShopifyConfigured()) {
-    throw new Error('Shopify Storefront API credentials are not configured in environment variables.');
+    throw new Error(
+      'Shopify Storefront API credentials are not configured. Please set SHOPIFY_STORE_DOMAIN and SHOPIFY_STOREFRONT_ACCESS_TOKEN.'
+    );
   }
 
   const endpoint = `https://${config.domain}/api/${config.apiVersion}/graphql.json`;
@@ -75,6 +119,59 @@ export async function shopifyStorefrontQuery<T = any>(query: string, variables: 
   }
 
   return json.data;
+}
+
+/**
+ * Resolve a real product variant ID from explicit config or by querying the Shopify store
+ * Never invents mock or placeholder IDs.
+ */
+export async function resolveShopifyVariantId(explicitVariantId?: string): Promise<string> {
+  const config = getShopifyConfig();
+  const candidate = explicitVariantId || config.variantId;
+
+  if (candidate && !candidate.includes('placeholder')) {
+    return formatShopifyVariantId(candidate);
+  }
+
+  // Auto-discover first available variant from real Shopify catalog
+  const query = `
+    query getCatalogVariants {
+      products(first: 10) {
+        edges {
+          node {
+            id
+            title
+            handle
+            variants(first: 5) {
+              edges {
+                node {
+                  id
+                  title
+                  availableForSale
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const data = await shopifyStorefrontQuery(query);
+  const products = data?.products?.edges || [];
+
+  for (const p of products) {
+    const variants = p.node?.variants?.edges || [];
+    for (const v of variants) {
+      if (v.node?.id) {
+        return v.node.id;
+      }
+    }
+  }
+
+  throw new Error(
+    'No product variant found in your Shopify store. Please ensure a product is published to the Storefront sales channel, or specify SHOPIFY_VARIANT_ID.'
+  );
 }
 
 /**
@@ -128,18 +225,33 @@ export async function fetchShopifyProduct(handle?: string): Promise<ShopifyProdu
       quantityAvailable: variant.quantityAvailable,
     };
   } catch (error) {
-    console.error('Error fetching product from Shopify:', error);
+    console.warn('Could not fetch product from Shopify:', error);
     return null;
   }
 }
 
 /**
- * Create a Shopify Cart and retrieve the official Shopify Checkout URL
+ * Create a real Shopify Cart and retrieve the official Shopify Checkout URL.
+ * Automatically resolves merchandiseId if not provided.
  */
 export async function createShopifyCheckout(
-  lines: Array<{ merchandiseId: string; quantity: number }>,
+  lines: Array<{ merchandiseId?: string; quantity: number }>,
   buyerEmail?: string
 ): Promise<{ checkoutUrl: string; cartId: string }> {
+  // Ensure lines have real merchandise IDs
+  const resolvedLines = await Promise.all(
+    lines.map(async (line) => {
+      let merchId = line.merchandiseId;
+      if (!merchId || merchId.includes('placeholder')) {
+        merchId = await resolveShopifyVariantId();
+      }
+      return {
+        merchandiseId: formatShopifyVariantId(merchId),
+        quantity: Math.max(1, line.quantity),
+      };
+    })
+  );
+
   const mutation = `
     mutation cartCreate($input: CartInput!) {
       cartCreate(input: $input) {
@@ -162,19 +274,20 @@ export async function createShopifyCheckout(
   `;
 
   const input: any = {
-    lines,
+    lines: resolvedLines,
   };
 
-  if (buyerEmail) {
+  if (buyerEmail && buyerEmail.includes('@')) {
     input.buyerIdentity = {
-      email: buyerEmail,
+      email: buyerEmail.trim(),
     };
   }
 
   const data = await shopifyStorefrontQuery(mutation, { input });
 
   if (data?.cartCreate?.userErrors?.length > 0) {
-    throw new Error(data.cartCreate.userErrors.map((e: any) => e.message).join(', '));
+    const errorMsgs = data.cartCreate.userErrors.map((e: any) => e.message).join(', ');
+    throw new Error(`Shopify Cart Error: ${errorMsgs}`);
   }
 
   const cart = data?.cartCreate?.cart;

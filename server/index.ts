@@ -348,63 +348,15 @@ app.post('/api/checkout', async (req: Request, res: Response): Promise<void> => 
     }
 
     // 6. Check if Stripe payment provider is configured
-    const isTestCheckout = Boolean(req.body.testMode || !isStripeConfigured || !stripeClient);
-
     if (!isStripeConfigured || !stripeClient) {
-      // If client explicitly didn't allow test checkout, return setup requirement notice
-      if (req.body.requireLiveGateway) {
-        res.status(400).json({
-          success: false,
-          error: 'Payment Provider Setup Required: No payment credentials configured. Please add a valid test key (e.g. sk_test_...) to STRIPE_SECRET_KEY in .env before initiating live checkout.',
-          setupRequired: true
-        });
-        return;
-      }
-
-      // Safe test order flow for preview/dev mode without requiring live Stripe keys
-      const orderId = `SR-ORD-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-      const testSessionId = `test_session_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const baseUrl = returnUrl || 'http://localhost:3000';
-
-      const totalCents = SERVER_PRODUCT.priceCents * totalRequestedQty;
-      const customerEmail = req.body.customerEmail || req.body.email || 'customer@serein.com';
-
-      // Record verified order in memory
-      orders.set(orderId, {
-        id: orderId,
-        sessionId: testSessionId,
-        status: 'paid',
-        paidAt: new Date().toISOString(),
-        customerEmail,
-        items: [
-          {
-            productId: SERVER_PRODUCT.id,
-            quantity: totalRequestedQty,
-            unitPriceCents: SERVER_PRODUCT.priceCents,
-          },
-        ],
-        totalCents,
-        currency: SERVER_PRODUCT.currency,
-        createdAt: new Date().toISOString(),
-      });
-
-      // Safely decrement inventory
-      SERVER_PRODUCT.inventory = Math.max(0, SERVER_PRODUCT.inventory - totalRequestedQty);
-      if (SERVER_PRODUCT.inventory === 0) {
-        SERVER_PRODUCT.available = false;
-      }
-
-      res.json({
-        success: true,
-        sessionId: testSessionId,
-        checkoutUrl: `${baseUrl}/?order-confirmation=true&session_id=${testSessionId}`,
-        orderId,
-        isTestMode: true,
+      res.status(503).json({
+        success: false,
+        error: 'Commerce gateway not configured. Please set SHOPIFY_STORE_DOMAIN and SHOPIFY_STOREFRONT_ACCESS_TOKEN in your environment.',
       });
       return;
     }
 
-    // 6. Create Stripe Checkout Session using verified server pricing
+    // 7. Create Stripe Checkout Session using verified server pricing
     const orderId = `SR-ORD-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
     const baseUrl = returnUrl || 'http://localhost:3000';
 

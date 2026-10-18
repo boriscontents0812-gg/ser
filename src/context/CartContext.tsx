@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { storeConfig } from '../config/storeConfig';
+import { createShopifyCheckout, isShopifyConfigured } from '../services/shopify';
 
 export interface CartItem {
   productId: string;
@@ -163,101 +164,70 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCheckoutError(null);
 
     try {
-      // Security: Client NEVER trusts client prices. Only sends productId & quantity.
-      // Trusted backend validates inventory, product validity, reads server price,
-      // and constructs the Stripe session or stops if unconfigured.
-      const payload = {
-        items: items.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-        })),
-        customerEmail: options?.customerEmail,
-        shippingDetails: options?.shippingDetails,
-        testMode: options?.testMode ?? true,
-        returnUrl: window.location.origin,
-      };
+      // 1. First, attempt checkout through /api/checkout serverless endpoint
+      let checkoutUrl: string | null = null;
+      let serverErrorMsg: string | null = null;
 
-      let response: Response | null = null;
       try {
-        response = await fetch('/api/checkout', {
+        const response = await fetch('/api/checkout', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            items: items.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+            })),
+            customerEmail: options?.customerEmail,
+            shippingDetails: options?.shippingDetails,
+            returnUrl: window.location.origin,
+          }),
         });
-      } catch (fetchErr: any) {
-        console.warn('Network error reaching /api/checkout:', fetchErr);
-      }
 
-      if (response) {
         const contentType = response.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
-          let data: any = null;
-          try {
-            data = await response.json();
-          } catch (jsonErr) {
-            console.error('Failed to parse checkout JSON:', jsonErr);
-          }
-
-          if (data) {
-            if (!response.ok || !data.success) {
-              throw new Error(data.error || 'Checkout initiation failed. Please try again.');
-            }
-
-            if (data.checkoutUrl) {
-              window.location.href = data.checkoutUrl;
-              return;
-            }
+          const data = await response.json();
+          if (response.ok && data.success && data.checkoutUrl) {
+            checkoutUrl = data.checkoutUrl;
+          } else {
+            serverErrorMsg = data.error || `Checkout failed (status ${response.status})`;
           }
         } else {
-          // Server returned HTML or text (e.g. 404, 502, "The page cannot be found...")
-          // Safely consume text without throwing JSON syntax error
-          const rawText = await response.text();
-          console.warn('Backend returned non-JSON response:', response.status, rawText.slice(0, 100));
+          serverErrorMsg = `Server returned status ${response.status}`;
+        }
+      } catch (fetchErr: any) {
+        console.warn('Backend API endpoint unreachable, checking client Storefront fallback:', fetchErr);
+      }
+
+      // 2. If serverless call succeeded with checkoutUrl, redirect directly to Shopify Checkout
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
+      }
+
+      // 3. Client-side Storefront API fallback (if frontend has VITE_SHOPIFY keys configured directly)
+      if (isShopifyConfigured()) {
+        try {
+          const shopifyRes = await createShopifyCheckout(
+            items.map((i) => ({ quantity: i.quantity })),
+            options?.customerEmail
+          );
+          if (shopifyRes.checkoutUrl) {
+            window.location.href = shopifyRes.checkoutUrl;
+            return;
+          }
+        } catch (clientShopifyErr: any) {
+          throw new Error(clientShopifyErr.message || 'Shopify Storefront checkout failed.');
         }
       }
 
-      // If backend is unconfigured or running on a static preview host without Express,
-      // provide a seamless client-side order confirmation so the customer never encounters a blank screen or error!
-      const totalAmount = storeConfig.product.defaultRetailPrice
-        ? items.reduce((sum, item) => sum + item.quantity * storeConfig.product.defaultRetailPrice!, 0)
-        : 38.00;
-
-      const fallbackOrderId = `SR-ORD-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-      const fallbackSessionId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-      const orderRecord = {
-        sessionId: fallbackSessionId,
-        orderId: fallbackOrderId,
-        total: totalAmount,
-        currency: storeConfig.product.currency,
-        customerEmail: options?.customerEmail || 'customer@serein.com',
-        paidAt: new Date().toISOString(),
-        items: items.map(item => ({
-          productId: item.productId,
-          title: item.title,
-          quantity: item.quantity,
-          unitPrice: storeConfig.product.defaultRetailPrice || 38.00,
-        })),
-        shippingAddress: options?.shippingDetails || {
-          fullName: 'Serein Customer',
-          address: '123 Travel Avenue',
-          city: 'New York',
-          state: 'NY',
-          postalCode: '10001',
-          country: 'United States',
-        }
-      };
-
-      try {
-        localStorage.setItem('serein_latest_order', JSON.stringify(orderRecord));
-      } catch (storageErr) {
-        console.warn('Could not cache fallback order in localStorage:', storageErr);
-      }
-
-      // Redirect to order confirmation page (root path with query to prevent static host 404s)
-      window.location.href = `/?order-confirmation=true&session_id=${fallbackSessionId}`;
+      // 4. If neither server nor client could create a real checkout, NEVER invent a mock order!
+      // Report the exact configuration requirement.
+      throw new Error(
+        serverErrorMsg ||
+        'Shopify checkout is not yet configured. Please set SHOPIFY_STORE_DOMAIN and SHOPIFY_STOREFRONT_ACCESS_TOKEN in Vercel Project Settings > Environment Variables.'
+      );
     } catch (err: any) {
       console.error('Checkout error:', err);
       setCheckoutError(err.message || 'An unexpected error occurred during checkout.');

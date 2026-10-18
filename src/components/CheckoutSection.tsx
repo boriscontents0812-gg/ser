@@ -43,12 +43,6 @@ export const CheckoutSection: React.FC = () => {
   const [postalCode, setPostalCode] = useState('');
   const [country, setCountry] = useState('United States');
 
-  // Card fields (for direct card entry presentation)
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('');
-  const [cardCvc, setCardCvc] = useState('');
-  const [cardName, setCardName] = useState('');
-
   // Promo code
   const [promoCode, setPromoCode] = useState('');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
@@ -81,25 +75,6 @@ export const CheckoutSection: React.FC = () => {
       setPromoApplied(false);
       setDiscountPercent(0);
     }
-  };
-
-  const formatCardNumber = (value: string) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    const matches = v.match(/\d{4,16}/g);
-    const match = (matches && matches[0]) || '';
-    const parts = [];
-    for (let i = 0, len = match.length; i < len; i += 4) {
-      parts.push(match.substring(i, i + 4));
-    }
-    return parts.length ? parts.join(' ') : value;
-  };
-
-  const formatExpiry = (value: string) => {
-    const clean = value.replace(/[^0-9]/g, '');
-    if (clean.length >= 2) {
-      return `${clean.slice(0, 2)}/${clean.slice(2, 4)}`;
-    }
-    return clean;
   };
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
@@ -421,7 +396,7 @@ export const CheckoutSection: React.FC = () => {
                 </div>
               </div>
 
-              {/* Step 4: Payment Information */}
+              {/* Step 4: Official Shopify Payment Processing */}
               <div className="bg-white border border-[#D6DCE1] rounded-3xl p-6 sm:p-8 shadow-tactile space-y-5">
                 <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-4">
                   <div className="flex items-center gap-3">
@@ -436,79 +411,50 @@ export const CheckoutSection: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Direct Card Information fields - Stripe button removed */}
                 <div className="space-y-4 pt-1">
-                  <div className="space-y-1.5">
-                    <label htmlFor="card-name" className="block text-xs font-bold text-[#14334D]">
-                      Name on Card
-                    </label>
-                    <input
-                      id="card-name"
-                      type="text"
-                      value={cardName}
-                      onChange={(e) => setCardName(e.target.value)}
-                      placeholder="Jane Doe"
-                      className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-4 py-3 text-sm text-[#14334D] focus:border-[#3898D5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3898D5]/20 transition-all placeholder:text-[#94A3B8]"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label htmlFor="card-num" className="block text-xs font-bold text-[#14334D]">
-                      Card Number
-                    </label>
-                    <div className="relative">
-                      <input
-                        id="card-num"
-                        type="text"
-                        maxLength={19}
-                        value={cardNumber}
-                        onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                        placeholder="4242 •••• •••• 4242"
-                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-4 py-3 text-sm text-[#14334D] font-mono focus:border-[#3898D5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3898D5]/20 transition-all placeholder:text-[#94A3B8]"
-                      />
-                      <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-[#64748B] bg-white border border-[#E2E8F0] px-1.5 py-0.5 rounded shadow-xs">
-                          VISA / MC / AMEX
-                        </span>
+                  <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-white border border-[#CBD5E1] flex items-center justify-center text-[#2563EB] shadow-xs">
+                          <CreditCard className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-[#14334D]">Official Shopify Hosted Checkout</p>
+                          <p className="text-[11px] text-[#456176]">Level 1 PCI-DSS certified encrypted gateway</p>
+                        </div>
                       </div>
+                      <span className="text-[10px] font-bold text-[#2563EB] bg-[#E8F1FC] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Secure
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-[#456176] leading-relaxed pt-1">
+                      To safeguard your financial privacy, card information is entered directly on Shopify's official checkout page. You can complete your order using Credit Card, Shop Pay, Apple Pay, Google Pay, or PayPal.
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] font-mono font-bold text-[#334155] bg-white border border-[#CBD5E1] px-2 py-1 rounded shadow-xs">
+                        Shop Pay
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-[#334155] bg-white border border-[#CBD5E1] px-2 py-1 rounded shadow-xs">
+                        Apple Pay
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-[#334155] bg-white border border-[#CBD5E1] px-2 py-1 rounded shadow-xs">
+                        Visa / Mastercard
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-[#334155] bg-white border border-[#CBD5E1] px-2 py-1 rounded shadow-xs">
+                        Amex
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-[#334155] bg-white border border-[#CBD5E1] px-2 py-1 rounded shadow-xs">
+                        PayPal
+                      </span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label htmlFor="card-exp" className="block text-xs font-bold text-[#14334D]">
-                        Expires (MM/YY)
-                      </label>
-                      <input
-                        id="card-exp"
-                        type="text"
-                        maxLength={5}
-                        value={cardExpiry}
-                        onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
-                        placeholder="MM/YY"
-                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-4 py-3 text-sm text-[#14334D] font-mono focus:border-[#3898D5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3898D5]/20 transition-all placeholder:text-[#94A3B8]"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label htmlFor="card-cvc" className="block text-xs font-bold text-[#14334D]">
-                        CVC
-                      </label>
-                      <input
-                        id="card-cvc"
-                        type="password"
-                        maxLength={4}
-                        value={cardCvc}
-                        onChange={(e) => setCardCvc(e.target.value.replace(/[^0-9]/g, ''))}
-                        placeholder="•••"
-                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-4 py-3 text-sm text-[#14334D] font-mono focus:border-[#3898D5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3898D5]/20 transition-all placeholder:text-[#94A3B8]"
-                      />
-                    </div>
+                  <div className="pt-1 text-[11px] text-[#708496] flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Zero card numbers are handled by intermediate servers. Direct Shopify buyer protection.</span>
                   </div>
-                </div>
-
-                <div className="pt-2 text-[11px] text-[#708496] flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Zero sensitive credit card information is stored on our servers.</span>
                 </div>
               </div>
 
@@ -522,11 +468,11 @@ export const CheckoutSection: React.FC = () => {
                   {isCheckingOut ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Processing Order...</span>
+                      <span>Creating Shopify Cart...</span>
                     </>
                   ) : (
                     <>
-                      <span>Place Order · ${totalAmount.toFixed(2)} USD</span>
+                      <span>Continue to Shopify Checkout · ${totalAmount.toFixed(2)} USD</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -675,11 +621,11 @@ export const CheckoutSection: React.FC = () => {
                 {isCheckingOut ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-white" />
-                    <span>Processing Order...</span>
+                    <span>Creating Shopify Cart...</span>
                   </>
                 ) : (
                   <>
-                    <span>Place Order · ${totalAmount.toFixed(2)} USD</span>
+                    <span>Continue to Shopify Checkout · ${totalAmount.toFixed(2)} USD</span>
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                   </>
                 )}

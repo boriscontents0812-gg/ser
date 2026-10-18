@@ -49,27 +49,9 @@ export const OrderConfirmation: React.FC = () => {
           console.warn('Backend order check unavailable:', fetchErr);
         }
 
-        // If not verified through backend, check local storage order cache
-        if (!isVerified) {
-          const savedOrderStr = localStorage.getItem('serein_latest_order');
-          if (savedOrderStr) {
-            try {
-              const savedOrder = JSON.parse(savedOrderStr);
-              if (savedOrder && (savedOrder.sessionId === sessionId || sessionId.startsWith('local_') || sessionId.startsWith('test_session_'))) {
-                setOrderStatus('paid');
-                setOrderData(savedOrder);
-                clearCart();
-                isVerified = true;
-              }
-            } catch (storageParseErr) {
-              console.warn('Failed to parse cached order', storageParseErr);
-            }
-          }
-        }
-
         if (!isVerified) {
           setOrderStatus('not_found');
-          setErrorMessage('Could not verify payment session. Please check your confirmation email.');
+          setErrorMessage('No verified order session was found for this link. If you completed a purchase through Shopify Checkout, your receipt and live order tracking details have been emailed directly to you by Shopify.');
         }
       } catch (err: any) {
         setOrderStatus('error');
