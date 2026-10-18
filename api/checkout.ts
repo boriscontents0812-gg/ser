@@ -124,75 +124,111 @@ export default async function handler(req: any, res: any) {
 
       const formattedVariantGid = formatVariantGid(resolvedVariantId);
 
-      // Create official Shopify Cart
-      const cartResponse = await fetch(`https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': shopifyAccessToken,
-        },
-        body: JSON.stringify({
-          query: `
-            mutation cartCreate($input: CartInput!) {
-              cartCreate(input: $input) {
-                cart {
-                  id
-                  checkoutUrl
-                }
-                userErrors {
-                  field
-                  message
+      // Create official Shopify Cart via GraphQL
+      let checkoutUrl: string | null = null;
+      let cartId: string | null = null;
+
+      try {
+        const cartResponse = await fetch(`https://${shopifyDomain}/api/${shopifyApiVersion}/graphql.json`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Storefront-Access-Token': shopifyAccessToken,
+          },
+          body: JSON.stringify({
+            query: `
+              mutation cartCreate($input: CartInput!) {
+                cartCreate(input: $input) {
+                  cart {
+                    id
+                    checkoutUrl
+                  }
+                  userErrors {
+                    field
+                    message
+                  }
                 }
               }
-            }
-          `,
-          variables: {
-            input: {
-              lines: items.map((i: any) => ({
-                merchandiseId: formattedVariantGid,
-                quantity: Math.max(1, i.quantity || 1),
-              })),
-              buyerIdentity: customerEmail && customerEmail.includes('@') ? { email: customerEmail.trim() } : undefined,
+            `,
+            variables: {
+              input: {
+                lines: items.map((i: any) => ({
+                  merchandiseId: formattedVariantGid,
+                  quantity: Math.max(1, i.quantity || 1),
+                })),
+                buyerIdentity: customerEmail && customerEmail.includes('@') ? { email: customerEmail.trim() } : undefined,
+              },
             },
-          },
-        }),
-      });
+          }),
+        });
 
-      if (!cartResponse.ok) {
-        const errorText = await cartResponse.text();
-        console.error('Shopify cartCreate HTTP error:', cartResponse.status, errorText);
-        return res.status(502).json({
-          success: false,
-          error: `Shopify API returned HTTP ${cartResponse.status}. Please verify your SHOPIFY_STORE_DOMAIN and SHOPIFY_STOREFRONT_ACCESS_TOKEN.`,
+        if (cartResponse.ok) {
+          const cartJson = await cartResponse.json();
+          if (cartJson?.data?.cartCreate?.cart?.checkoutUrl) {
+            checkoutUrl = cartJson.data.cartCreate.cart.checkoutUrl;
+            cartId = cartJson.data.cartCreate.cart.id;
+          }
+        }
+      } catch (gqlErr) {
+        console.warn('Shopify Storefront GraphQL cartCreate failed, checking permalink:', gqlErr);
+      }
+
+      // If GraphQL cart was created, return it
+      if (checkoutUrl) {
+        return res.status(200).json({
+          success: true,
+          checkoutUrl,
+          cartId,
+          isShopify: true,
         });
       }
 
-      const cartJson = await cartResponse.json();
+      // Otherwise, construct the official Shopify Cart checkout permalink
+      const rawNumericId = formattedVariantGid.replace(/^gid:\/\/shopify\/ProductVariant\//, '').trim();
+      if (rawNumericId && /^\d+$/.test(rawNumericId)) {
+        const queryParams = new URLSearchParams();
+        if (customerEmail && customerEmail.includes('@')) {
+          queryParams.set('checkout[email]', customerEmail.trim());
+        }
+        if (req.body.shippingDetails) {
+          const s = req.body.shippingDetails;
+          if (s.fullName) {
+            const parts = s.fullName.trim().split(' ');
+            queryParams.set('checkout[shipping_address][first_name]', parts[0] || '');
+            queryParams.set('checkout[shipping_address][last_name]', parts.slice(1).join(' ') || '');
+          }
+          if (s.address) queryParams.set('checkout[shipping_address][address1]', s.address);
+          if (s.city) queryParams.set('checkout[shipping_address][city]', s.city);
+          if (s.state) queryParams.set('checkout[shipping_address][province]', s.state);
+          if (s.postalCode) queryParams.set('checkout[shipping_address][zip]', s.postalCode);
+          if (s.country) queryParams.set('checkout[shipping_address][country]', s.country);
+        }
 
-      if (cartJson?.data?.cartCreate?.userErrors?.length > 0) {
-        const userErrors = cartJson.data.cartCreate.userErrors.map((e: any) => e.message).join(', ');
-        return res.status(400).json({
-          success: false,
-          error: `Shopify Cart Error: ${userErrors}`,
+        const permalink = `https://${shopifyDomain}/cart/${rawNumericId}:${totalQty}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+        return res.status(200).json({
+          success: true,
+          checkoutUrl: permalink,
+          isShopify: true,
         });
       }
+    }
 
-      const checkoutUrl = cartJson?.data?.cartCreate?.cart?.checkoutUrl;
-      const cartId = cartJson?.data?.cartCreate?.cart?.id;
-
-      if (!checkoutUrl) {
-        return res.status(502).json({
-          success: false,
-          error: 'Shopify did not return a checkout URL for this cart.',
+    // Direct fallback if SHOPIFY_STORE_DOMAIN is set and variant ID is provided
+    if (shopifyDomain && !shopifyDomain.includes('placeholder')) {
+      const explicitVariant = requestedVariantId || process.env.SHOPIFY_VARIANT_ID || process.env.VITE_SHOPIFY_VARIANT_ID;
+      const rawNumericId = (explicitVariant || '').replace(/^gid:\/\/shopify\/ProductVariant\//, '').trim();
+      if (rawNumericId && /^\d+$/.test(rawNumericId)) {
+        const queryParams = new URLSearchParams();
+        if (customerEmail && customerEmail.includes('@')) {
+          queryParams.set('checkout[email]', customerEmail.trim());
+        }
+        const permalink = `https://${shopifyDomain}/cart/${rawNumericId}:${totalQty}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+        return res.status(200).json({
+          success: true,
+          checkoutUrl: permalink,
+          isShopify: true,
         });
       }
-
-      return res.status(200).json({
-        success: true,
-        checkoutUrl,
-        cartId,
-        isShopify: true,
-      });
     }
 
     // 2. Stripe Checkout (Secondary provider if explicitly configured)
